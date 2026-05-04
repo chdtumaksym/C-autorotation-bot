@@ -1,0 +1,26 @@
+name: Build Pixel Bot
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: # Позволяет запускать сборку вручную кнопкой
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Compile Bot
+      run: |
+        cl.exe /EHsc /O2 /W3 /MT /D UNICODE /D _UNICODE bot.cpp user32.lib gdi32.lib shell32.lib /Fe:PixelBot.exe
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PixelBot-Executable
+        path: PixelBot.exe
