@@ -212,7 +212,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             // Использование RichEdit спасает от багов скролла с кастомным фоном
             hLogEdit = CreateWindowExW(0, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY, 310, 148, 180, 199, hWnd, NULL, NULL, NULL);
             SendMessage(hLogEdit, EM_SETBKGNDCOLOR, 0, RGB(20, 20, 20));
-            CHARFORMAT2W cf = {0}; cf.cbSize = sizeof(cf); cf.dwMask = CFM_COLOR; cf.crTextColor = RGB(0, 255, 0);
+            
+            CHARFORMAT2W cf;
+            ZeroMemory(&cf, sizeof(cf));
+            cf.cbSize = sizeof(cf); 
+            cf.dwMask = CFM_COLOR; 
+            cf.crTextColor = RGB(0, 255, 0);
             SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
 
             // Settings Elements
