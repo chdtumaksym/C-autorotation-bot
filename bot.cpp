@@ -69,6 +69,8 @@ bool botActive = false;
 bool isRunning = true;
 int castDelayMs = 20;
 
+#define WM_UPDATE_LOG (WM_APP + 1)
+
 HWND hMainWnd, hBtnToggle, hBtnProfile, hBtnSave, hBtnSettings, hBtnClose, hStatStatus, hStatProfile, hDelayLabel, hDelayEdit;
 HWND hBindsLabels[6], hBindsEdits[6];
 HWND hLogEdit;
@@ -140,10 +142,14 @@ void AppendLog(const std::wstring& msg) {
 void PressKey(WORD vkCode, const std::wstring& spellName) {
     INPUT input = {0}; input.type = INPUT_KEYBOARD; input.ki.wVk = vkCode;
     SendInput(1, &input, sizeof(INPUT));
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2)); // Снизил удержание с 10 до 2 мс для скорости
     input.ki.dwFlags = KEYEVENTF_KEYUP; SendInput(1, &input, sizeof(INPUT));
+    
     wchar_t btnName[2] = {(wchar_t)vkCode, 0};
-    AppendLog(L"[КАСТ] " + spellName + L" -> [" + btnName + L"]");
+    
+    // Асинхронная отправка лога, чтобы не тормозить цикл сканирования пикселей
+    std::wstring* logMsg = new std::wstring(L"[КАСТ] " + spellName + L" -> [" + btnName + L"]");
+    PostMessage(hMainWnd, WM_UPDATE_LOG, 0, (LPARAM)logMsg);
 }
 
 int ClassifyColor(int r, int g, int b) {
@@ -361,6 +367,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             SetBkMode(hdc, OPAQUE); SetBkColor(hdc, editBgColor);
             SetTextColor(hdc, textColor);
             return (INT_PTR)editBrush;
+        }
+        case WM_UPDATE_LOG: {
+            std::wstring* msg = (std::wstring*)lParam;
+            AppendLog(*msg);
+            delete msg; // Очищаем память после того как UI отрисовал текст
+            break;
         }
         case WM_COMMAND: {
             int wmId = LOWORD(wParam); int wmEvent = HIWORD(wParam);
