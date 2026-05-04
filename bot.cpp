@@ -285,6 +285,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             SendMessage(hLogEdit, WM_SETFONT, (WPARAM)hLogFont, TRUE);
             break;
         }
+        case WM_ERASEBKGND: {
+            HDC hdc = (HDC)wParam;
+            RECT rc;
+            GetClientRect(hWnd, &rc);
+            FillRect(hdc, &rc, bgBrush);
+            return 1; // Фон очищен вручную, фантомов не будет
+        }
         case WM_PAINT: {
             PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
             SetTextColor(hdc, textColor); SetBkMode(hdc, TRANSPARENT);
