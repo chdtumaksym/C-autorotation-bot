@@ -10,6 +10,7 @@ enum Lang { EN = 0, RU = 1, UA = 2 };
 Lang currentLang = RU;
 bool showSettings = false;
 bool isTopMost = true;
+bool isDarkTheme = true;
 
 const wchar_t* uiStrs[][3] = {
     { L"ON / OFF (F9)", L"ВКЛ / ВЫКЛ (F9)", L"УВІМК / ВИМК (F9)" },
@@ -25,25 +26,42 @@ const wchar_t* uiStrs[][3] = {
     { L">> BOT STARTED", L">> БОТ ЗАПУЩЕН", L">> БОТ ЗАПУЩЕНО" },
     { L">> BOT STOPPED", L">> БОТ ОСТАНОВЛЕН", L">> БОТ ЗУПИНЕНО" },
     { L"--- BINDS & SETTINGS SAVED ---", L"--- БИНДЫ И НАСТРОЙКИ СОХРАНЕНЫ ---", L"--- БІНДИ ТА НАЛАШТУВАННЯ ЗБЕРЕЖЕНО ---" },
-    { L">> PROFILE CHANGED: ", L">> СМЕНА ПРОФИЛЯ: ", L">> ЗМІНА ПРОФІЛЮ: " },
+    { L"Profile Activated", L"Профиль активирован", L"Профіль активовано" },
     { L"System loaded. F9 - Start/Stop.", L"Система загружена. F9 - Старт/Стоп.", L"Система завантажена. F9 - Старт/Стоп." },
-    { L"BACK", L"НАЗАД", L"НАЗАД" }
+    { L"BACK", L"НАЗАД", L"НАЗАД" },
+    { L"Interface Theme:", L"Тема интерфейса:", L"Тема інтерфейсу:" }
 };
 
 struct ProfileBinds {
-    std::wstring profileName;
-    WORD keyRed, keyGreen, keyBlue, keyYellow, keyCyan, keyMagenta;
-    std::wstring nameRed, nameGreen, nameBlue, nameYellow, nameCyan, nameMagenta;
+    std::wstring profileName[3];
+    WORD keys[6];
+    std::wstring spellNames[6][3];
 };
 
 ProfileBinds rogueProfile = {
-    L"РОГА (ROGUE)", '1', '2', '3', '4', '5', '6',
-    L"Коварный удар", L"Мясорубка", L"Потрошение", L"Череда убийств", L"Выброс адреналина", L"Шквал клинков"
+    { L"ROGUE", L"РОГА", L"РОЗБІЙНИК" },
+    { '1', '2', '3', '4', '5', '6' },
+    {
+        { L"Sinister Strike", L"Коварный удар", L"Підступний удар" },
+        { L"Slice and Dice", L"Мясорубка", L"М'ясорубка" },
+        { L"Eviscerate", L"Потрошение", L"Потрошіння" },
+        { L"Killing Spree", L"Череда убийств", L"Шквал вбивств" },
+        { L"Adrenaline Rush", L"Выброс адреналина", L"Викид адреналіну" },
+        { L"Blade Flurry", L"Шквал клинков", L"Шквал клинків" }
+    }
 };
 
 ProfileBinds palaProfile = {
-    L"ПАЛАДИН (PALADIN)", 'R', '1', '2', 'Q', '4', '5',
-    L"Правосудие", L"Божественная буря", L"Удар воина Света", L"Молот гнева", L"Экзорцизм", L"Освящение"
+    { L"PALADIN", L"ПАЛАДИН", L"ПАЛАДИН" },
+    { 'R', '1', '2', 'Q', '4', '5' },
+    {
+        { L"Judgement", L"Правосудие", L"Правосуддя" },
+        { L"Divine Storm", L"Божественная буря", L"Божественна буря" },
+        { L"Crusader Strike", L"Удар воина Света", L"Удар воїна Світла" },
+        { L"Hammer of Wrath", L"Молот гнева", L"Молот гніву" },
+        { L"Exorcism", L"Экзорцизм", L"Екзорцизм" },
+        { L"Consecration", L"Освящение", L"Освячення" }
+    }
 };
 
 ProfileBinds* currentProfile = &palaProfile;
@@ -54,14 +72,50 @@ int castDelayMs = 20;
 HWND hMainWnd, hBtnToggle, hBtnProfile, hBtnSave, hBtnSettings, hBtnClose, hStatStatus, hStatProfile, hDelayLabel, hDelayEdit;
 HWND hBindsLabels[6], hBindsEdits[6];
 HWND hLogEdit;
-HWND hChkTopMost, hComboLang, hLangLabel;
+HWND hChkTopMost, hComboLang, hLangLabel, hComboTheme, hThemeLabel;
 
-HBRUSH bgBrush = CreateSolidBrush(RGB(25, 25, 25));
-HBRUSH editBrush = CreateSolidBrush(RGB(15, 15, 15));
-HBRUSH btnBrush = CreateSolidBrush(RGB(50, 50, 55));
-HBRUSH btnHoverBrush = CreateSolidBrush(RGB(70, 70, 75));
-HBRUSH closeBtnBrush = CreateSolidBrush(RGB(150, 40, 40));
-HBRUSH closeBtnHoverBrush = CreateSolidBrush(RGB(200, 50, 50));
+HBRUSH bgBrush = NULL, editBrush = NULL, btnBrush = NULL, btnHoverBrush = NULL;
+HBRUSH closeBtnBrush = NULL, closeBtnHoverBrush = NULL;
+COLORREF textColor, logTextColor, bgColor, editBgColor;
+
+void ApplyTheme() {
+    if (bgBrush) DeleteObject(bgBrush);
+    if (editBrush) DeleteObject(editBrush);
+    if (btnBrush) DeleteObject(btnBrush);
+    if (btnHoverBrush) DeleteObject(btnHoverBrush);
+    if (closeBtnBrush) DeleteObject(closeBtnBrush);
+    if (closeBtnHoverBrush) DeleteObject(closeBtnHoverBrush);
+
+    if (isDarkTheme) {
+        bgBrush = CreateSolidBrush(RGB(25, 25, 25));
+        editBrush = CreateSolidBrush(RGB(15, 15, 15));
+        btnBrush = CreateSolidBrush(RGB(50, 50, 55));
+        btnHoverBrush = CreateSolidBrush(RGB(70, 70, 75));
+        textColor = RGB(220, 220, 220);
+        logTextColor = RGB(0, 255, 0);
+        bgColor = RGB(25, 25, 25);
+        editBgColor = RGB(15, 15, 15);
+    } else {
+        bgBrush = CreateSolidBrush(RGB(240, 240, 240));
+        editBrush = CreateSolidBrush(RGB(255, 255, 255));
+        btnBrush = CreateSolidBrush(RGB(200, 200, 200));
+        btnHoverBrush = CreateSolidBrush(RGB(170, 170, 170));
+        textColor = RGB(10, 10, 10);
+        logTextColor = RGB(0, 0, 200);
+        bgColor = RGB(240, 240, 240);
+        editBgColor = RGB(255, 255, 255);
+    }
+    closeBtnBrush = CreateSolidBrush(RGB(180, 50, 50));
+    closeBtnHoverBrush = CreateSolidBrush(RGB(220, 60, 60));
+
+    if (hLogEdit) {
+        SendMessage(hLogEdit, EM_SETBKGNDCOLOR, 0, editBgColor);
+        CHARFORMAT2W cf; ZeroMemory(&cf, sizeof(cf));
+        cf.cbSize = sizeof(cf); cf.dwMask = CFM_COLOR; cf.crTextColor = logTextColor;
+        SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&cf);
+    }
+    if (hMainWnd) InvalidateRect(hMainWnd, NULL, TRUE);
+}
 
 void AppendLog(const std::wstring& msg) {
     if (!hLogEdit) return;
@@ -73,21 +127,17 @@ void AppendLog(const std::wstring& msg) {
     swprintf(timeBuf, 64, L"[%02d:%02d:%02d.%03d] ", tm.tm_hour, tm.tm_min, tm.tm_sec, (int)ms.count());
     std::wstring fullMsg = timeBuf + msg + L"\r\n";
     
-    CHARRANGE cr;
-    cr.cpMin = -1; cr.cpMax = -1;
+    CHARRANGE cr; cr.cpMin = -1; cr.cpMax = -1;
     SendMessage(hLogEdit, EM_EXSETSEL, 0, (LPARAM)&cr);
     SendMessage(hLogEdit, EM_REPLACESEL, 0, (LPARAM)fullMsg.c_str());
     SendMessage(hLogEdit, WM_VSCROLL, SB_BOTTOM, 0);
 }
 
 void PressKey(WORD vkCode, const std::wstring& spellName) {
-    INPUT input = {0};
-    input.type = INPUT_KEYBOARD;
-    input.ki.wVk = vkCode;
+    INPUT input = {0}; input.type = INPUT_KEYBOARD; input.ki.wVk = vkCode;
     SendInput(1, &input, sizeof(INPUT));
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    input.ki.dwFlags = KEYEVENTF_KEYUP;
-    SendInput(1, &input, sizeof(INPUT));
+    input.ki.dwFlags = KEYEVENTF_KEYUP; SendInput(1, &input, sizeof(INPUT));
     wchar_t btnName[2] = {(wchar_t)vkCode, 0};
     AppendLog(L"[КАСТ] " + spellName + L" -> [" + btnName + L"]");
 }
@@ -109,14 +159,7 @@ void BotLoop() {
             COLORREF color = GetPixel(hdc, 0, 0);
             int colorId = ClassifyColor(GetRValue(color), GetGValue(color), GetBValue(color));
             if (colorId != 0) {
-                switch (colorId) {
-                    case 1: PressKey(currentProfile->keyRed, currentProfile->nameRed); break;
-                    case 2: PressKey(currentProfile->keyGreen, currentProfile->nameGreen); break;
-                    case 3: PressKey(currentProfile->keyBlue, currentProfile->nameBlue); break;
-                    case 4: PressKey(currentProfile->keyYellow, currentProfile->nameYellow); break;
-                    case 5: PressKey(currentProfile->keyCyan, currentProfile->nameCyan); break;
-                    case 6: PressKey(currentProfile->keyMagenta, currentProfile->nameMagenta); break;
-                }
+                PressKey(currentProfile->keys[colorId - 1], currentProfile->spellNames[colorId - 1][currentLang]);
                 std::this_thread::sleep_for(std::chrono::milliseconds(castDelayMs));
             }
         }
@@ -131,20 +174,20 @@ void UpdateUIStrings() {
     SetWindowTextW(hBtnSave, uiStrs[2][currentLang]);
     SetWindowTextW(hBtnSettings, showSettings ? uiStrs[15][currentLang] : uiStrs[3][currentLang]);
     SetWindowTextW(hStatStatus, botActive ? uiStrs[4][currentLang] : uiStrs[5][currentLang]);
-    SetWindowTextW(hStatProfile, (std::wstring(uiStrs[6][currentLang]) + currentProfile->profileName).c_str());
+    SetWindowTextW(hStatProfile, (std::wstring(uiStrs[6][currentLang]) + currentProfile->profileName[currentLang]).c_str());
     SetWindowTextW(hDelayLabel, uiStrs[7][currentLang]);
     SetWindowTextW(hChkTopMost, uiStrs[8][currentLang]);
     SetWindowTextW(hLangLabel, uiStrs[9][currentLang]);
+    SetWindowTextW(hThemeLabel, uiStrs[16][currentLang]);
+    
+    for (int i = 0; i < 6; i++) {
+        SetWindowTextW(hBindsLabels[i], currentProfile->spellNames[i][currentLang].c_str());
+    }
 }
 
 void LoadBindsToUI() {
-    std::wstring names[] = {currentProfile->nameRed, currentProfile->nameGreen, currentProfile->nameBlue, 
-                            currentProfile->nameYellow, currentProfile->nameCyan, currentProfile->nameMagenta};
-    WORD keys[] = {currentProfile->keyRed, currentProfile->keyGreen, currentProfile->keyBlue, 
-                   currentProfile->keyYellow, currentProfile->keyCyan, currentProfile->keyMagenta};
     for (int i = 0; i < 6; i++) {
-        SetWindowTextW(hBindsLabels[i], names[i].c_str());
-        wchar_t buf[2] = {(wchar_t)keys[i], 0};
+        wchar_t buf[2] = {(wchar_t)currentProfile->keys[i], 0};
         SetWindowTextW(hBindsEdits[i], buf);
     }
     wchar_t delayBuf[10]; swprintf(delayBuf, 10, L"%d", castDelayMs);
@@ -153,15 +196,12 @@ void LoadBindsToUI() {
 }
 
 void SaveBindsFromUI() {
-    WORD* profileKeys[] = {&currentProfile->keyRed, &currentProfile->keyGreen, &currentProfile->keyBlue, 
-                           &currentProfile->keyYellow, &currentProfile->keyCyan, &currentProfile->keyMagenta};
     for (int i = 0; i < 6; i++) {
         wchar_t buf[10]; GetWindowTextW(hBindsEdits[i], buf, 10);
-        if (wcslen(buf) > 0) *profileKeys[i] = towupper(buf[0]);
+        if (wcslen(buf) > 0) currentProfile->keys[i] = towupper(buf[0]);
     }
     wchar_t delayBuf[10]; GetWindowTextW(hDelayEdit, delayBuf, 10);
     castDelayMs = _wtoi(delayBuf); if (castDelayMs < 0) castDelayMs = 0;
-    
     AppendLog(uiStrs[12][currentLang]);
     LoadBindsToUI();
 }
@@ -177,16 +217,24 @@ void ToggleSettingsView() {
     for (int i = 0; i < 6; i++) { ShowWindow(hBindsLabels[i], showMain); ShowWindow(hBindsEdits[i], showMain); }
     
     ShowWindow(hChkTopMost, showSet);
-    ShowWindow(hComboLang, showSet);
-    ShowWindow(hLangLabel, showSet);
-    
+    ShowWindow(hComboLang, showSet); ShowWindow(hLangLabel, showSet);
+    ShowWindow(hComboTheme, showSet); ShowWindow(hThemeLabel, showSet);
     UpdateUIStrings();
+}
+
+void ShowProfilePopup() {
+    std::wstring title = uiStrs[13][currentLang];
+    std::wstring text = currentProfile->profileName[currentLang];
+    std::thread([text, title]() {
+        MessageBoxW(NULL, text.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
+    }).detach();
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE: {
-            LoadLibraryW(L"Msftedit.dll"); // Required for RichEdit
+            LoadLibraryW(L"Msftedit.dll"); 
+            ApplyTheme();
             HFONT hFont = CreateFontW(15, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
             HFONT hLogFont = CreateFontW(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_MODERN, L"Consolas");
             
@@ -209,35 +257,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 SendMessage(hBindsEdits[i], EM_SETLIMITTEXT, 1, 0);
             }
 
-            // Использование RichEdit спасает от багов скролла с кастомным фоном
             hLogEdit = CreateWindowExW(0, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY, 310, 148, 180, 199, hWnd, NULL, NULL, NULL);
-            SendMessage(hLogEdit, EM_SETBKGNDCOLOR, 0, RGB(20, 20, 20));
-            
-            CHARFORMAT2W cf;
-            ZeroMemory(&cf, sizeof(cf));
-            cf.cbSize = sizeof(cf); 
-            cf.dwMask = CFM_COLOR; 
-            cf.crTextColor = RGB(0, 255, 0);
-            SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
+            SendMessage(hLogEdit, EM_SETBKGNDCOLOR, 0, editBgColor);
+            CHARFORMAT2W cf; ZeroMemory(&cf, sizeof(cf)); cf.cbSize = sizeof(cf); cf.dwMask = CFM_COLOR; cf.crTextColor = logTextColor;
+            SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&cf);
 
-            // Settings Elements
-            hChkTopMost = CreateWindowW(L"BUTTON", L"", WS_CHILD | BS_AUTOCHECKBOX, 50, 150, 300, 30, hWnd, (HMENU)6, NULL, NULL);
+            hChkTopMost = CreateWindowW(L"BUTTON", L"", WS_CHILD | BS_AUTOCHECKBOX, 50, 120, 300, 30, hWnd, (HMENU)6, NULL, NULL);
             SendMessage(hChkTopMost, BM_SETCHECK, isTopMost ? BST_CHECKED : BST_UNCHECKED, 0);
-            hLangLabel = CreateWindowW(L"STATIC", L"", WS_CHILD, 50, 200, 150, 20, hWnd, NULL, NULL, NULL);
-            hComboLang = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | CBS_DROPDOWNLIST | WS_VSCROLL, 200, 198, 150, 100, hWnd, (HMENU)7, NULL, NULL);
+            
+            hLangLabel = CreateWindowW(L"STATIC", L"", WS_CHILD, 50, 170, 150, 20, hWnd, NULL, NULL, NULL);
+            hComboLang = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | CBS_DROPDOWNLIST | WS_VSCROLL, 200, 168, 150, 100, hWnd, (HMENU)7, NULL, NULL);
             SendMessage(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"English");
             SendMessage(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"Русский");
             SendMessage(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"Українська");
             SendMessage(hComboLang, CB_SETCURSEL, currentLang, 0);
 
-            HWND elements[] = {hBtnClose, hStatStatus, hStatProfile, hDelayLabel, hDelayEdit, hLogEdit, hChkTopMost, hComboLang, hLangLabel};
+            hThemeLabel = CreateWindowW(L"STATIC", L"", WS_CHILD, 50, 210, 150, 20, hWnd, NULL, NULL, NULL);
+            hComboTheme = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | CBS_DROPDOWNLIST | WS_VSCROLL, 200, 208, 150, 100, hWnd, (HMENU)8, NULL, NULL);
+            SendMessage(hComboTheme, CB_ADDSTRING, 0, (LPARAM)L"Светлая / Light");
+            SendMessage(hComboTheme, CB_ADDSTRING, 0, (LPARAM)L"Темная / Dark");
+            SendMessage(hComboTheme, CB_SETCURSEL, isDarkTheme ? 1 : 0, 0);
+
+            HWND elements[] = {hBtnClose, hStatStatus, hStatProfile, hDelayLabel, hDelayEdit, hLogEdit, hChkTopMost, hComboLang, hLangLabel, hComboTheme, hThemeLabel};
             for (HWND el : elements) SendMessage(el, WM_SETFONT, (WPARAM)hFont, TRUE);
             SendMessage(hLogEdit, WM_SETFONT, (WPARAM)hLogFont, TRUE);
             break;
         }
         case WM_PAINT: {
             PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
-            SetTextColor(hdc, RGB(200, 200, 200)); SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, textColor); SetBkMode(hdc, TRANSPARENT);
             HFONT hFont = CreateFontW(14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
             SelectObject(hdc, hFont); RECT rt = {20, 10, 300, 30};
             DrawTextW(hdc, L"WoW Pixel Bot - Premium Overlay", -1, &rt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
@@ -248,8 +296,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             LRESULT hit = DefWindowProcW(hWnd, msg, wParam, lParam);
             if (hit == HTCLIENT) {
                 POINT pt; pt.x = (short)LOWORD(lParam); pt.y = (short)HIWORD(lParam);
-                ScreenToClient(hWnd, &pt);
-                if (pt.y < 40) return HTCAPTION; // Драг за шапку
+                ScreenToClient(hWnd, &pt); if (pt.y < 40) return HTCAPTION;
             }
             return hit;
         }
@@ -260,7 +307,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             } else if (pdis->CtlID >= 1 && pdis->CtlID <= 5) {
                 FillRect(pdis->hDC, &pdis->rcItem, (pdis->itemState & ODS_SELECTED) ? btnHoverBrush : btnBrush);
             } else return FALSE;
-            SetTextColor(pdis->hDC, RGB(255, 255, 255)); SetBkMode(pdis->hDC, TRANSPARENT);
+            SetTextColor(pdis->hDC, (isDarkTheme || pdis->CtlID == 4) ? RGB(255, 255, 255) : RGB(10, 10, 10)); 
+            SetBkMode(pdis->hDC, TRANSPARENT);
             wchar_t text[64]; GetWindowTextW(pdis->hwndItem, text, 64);
             DrawTextW(pdis->hDC, text, -1, &pdis->rcItem, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             return TRUE;
@@ -268,21 +316,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_CTLCOLORSTATIC: {
             HDC hdc = (HDC)wParam; HWND hwnd = (HWND)lParam;
             SetBkMode(hdc, TRANSPARENT);
-            if (hwnd == hStatStatus) SetTextColor(hdc, botActive ? RGB(0, 255, 100) : RGB(255, 100, 100));
-            else if (hwnd == hStatProfile) SetTextColor(hdc, RGB(100, 200, 255));
-            else SetTextColor(hdc, RGB(220, 220, 220));
+            if (hwnd == hStatStatus) SetTextColor(hdc, botActive ? RGB(0, 200, 0) : RGB(220, 50, 50));
+            else if (hwnd == hStatProfile) SetTextColor(hdc, isDarkTheme ? RGB(100, 200, 255) : RGB(0, 100, 200));
+            else SetTextColor(hdc, textColor);
             return (INT_PTR)bgBrush;
         }
         case WM_CTLCOLOREDIT: {
             HDC hdc = (HDC)wParam; HWND hwnd = (HWND)lParam;
-            SetBkMode(hdc, OPAQUE); SetBkColor(hdc, RGB(20, 20, 20));
-            SetTextColor(hdc, RGB(255, 255, 255));
+            SetBkMode(hdc, OPAQUE); SetBkColor(hdc, editBgColor);
+            SetTextColor(hdc, textColor);
             return (INT_PTR)editBrush;
         }
         case WM_COMMAND: {
             int wmId = LOWORD(wParam); int wmEvent = HIWORD(wParam);
             if (wmEvent == EN_SETFOCUS) {
-                // Автовыделение текста при клике на поле (чтоб не стирать ручками)
                 for (int i=0; i<6; i++) if ((HWND)lParam == hBindsEdits[i]) SendMessage(hBindsEdits[i], EM_SETSEL, 0, -1);
             }
             if (wmId == 1) {
@@ -294,20 +341,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             } else if (wmId == 3) {
                 currentProfile = (currentProfile == &palaProfile) ? &rogueProfile : &palaProfile;
                 LoadBindsToUI();
-                AppendLog(std::wstring(uiStrs[13][currentLang]) + currentProfile->profileName);
+                AppendLog(std::wstring(uiStrs[13][currentLang]) + currentProfile->profileName[currentLang]);
                 InvalidateRect(hStatProfile, NULL, TRUE);
+                ShowProfilePopup();
             } else if (wmId == 4) {
                 isRunning = false; PostQuitMessage(0);
             } else if (wmId == 5) {
                 ToggleSettingsView();
-            } else if (wmId == 6) { // Checkbox TopMost
+            } else if (wmId == 6) { 
                 isTopMost = (SendMessage(hChkTopMost, BM_GETCHECK, 0, 0) == BST_CHECKED);
                 SetWindowPos(hMainWnd, isTopMost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-            } else if (wmId == 7 && wmEvent == CBN_SELCHANGE) { // Combobox Lang
+            } else if (wmId == 7 && wmEvent == CBN_SELCHANGE) { 
                 currentLang = (Lang)SendMessage(hComboLang, CB_GETCURSEL, 0, 0);
                 UpdateUIStrings();
+            } else if (wmId == 8 && wmEvent == CBN_SELCHANGE) { 
+                isDarkTheme = (SendMessage(hComboTheme, CB_GETCURSEL, 0, 0) == 1);
+                ApplyTheme();
             }
-            if (wmId >= 1 && wmId <= 5) SetFocus(hWnd); // Убираем фокус с кнопок
+            if (wmId >= 1 && wmId <= 5) SetFocus(hWnd);
             break;
         }
         case WM_DESTROY:
@@ -320,7 +371,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    WNDCLASSW wc = {0}; wc.lpfnWndProc = WndProc; wc.hInstance = hInstance; wc.hbrBackground = bgBrush;
+    WNDCLASSW wc = {0}; wc.lpfnWndProc = WndProc; wc.hInstance = hInstance; wc.hbrBackground = NULL;
     wc.lpszClassName = L"PixelBotOverlay"; wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClassW(&wc);
 
@@ -328,7 +379,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     hMainWnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_LAYERED, L"PixelBotOverlay", L"WoW Pixel Bot", 
                                WS_POPUP | WS_VISIBLE, (screenW - 510) / 2, (screenH - 370) / 2, 510, 370, NULL, NULL, hInstance, NULL);
 
-    SetLayeredWindowAttributes(hMainWnd, 0, 240, LWA_ALPHA); // 94% непрозрачности
+    SetLayeredWindowAttributes(hMainWnd, 0, 240, LWA_ALPHA); 
 
     LoadBindsToUI(); UpdateUIStrings();
     AppendLog(uiStrs[14][currentLang]);
@@ -354,8 +405,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             if (!f2_pressed) { 
                 currentProfile = (currentProfile == &palaProfile) ? &rogueProfile : &palaProfile;
                 LoadBindsToUI();
-                AppendLog(std::wstring(uiStrs[13][currentLang]) + currentProfile->profileName);
+                AppendLog(std::wstring(uiStrs[13][currentLang]) + currentProfile->profileName[currentLang]);
                 InvalidateRect(hStatProfile, NULL, TRUE); f2_pressed = true; 
+                ShowProfilePopup();
             }
         } else f2_pressed = false;
 
@@ -363,7 +415,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
 
     botThread.join();
-    DeleteObject(bgBrush); DeleteObject(editBrush); DeleteObject(btnBrush);
-    DeleteObject(btnHoverBrush); DeleteObject(closeBtnBrush); DeleteObject(closeBtnHoverBrush);
+    if (bgBrush) DeleteObject(bgBrush); if (editBrush) DeleteObject(editBrush); if (btnBrush) DeleteObject(btnBrush);
+    if (btnHoverBrush) DeleteObject(btnHoverBrush); if (closeBtnBrush) DeleteObject(closeBtnBrush); if (closeBtnHoverBrush) DeleteObject(closeBtnHoverBrush);
     return 0;
 }
