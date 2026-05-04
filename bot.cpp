@@ -69,7 +69,7 @@ ProfileBinds palaProfile = {
 ProfileBinds* currentProfile = &palaProfile;
 bool botActive = false;
 bool isRunning = true;
-int castDelayMs = 20;
+int castDelayMs = 10; // Золотая середина для задержки между кастами
 
 #define WM_UPDATE_LOG (WM_APP + 1)
 
@@ -120,6 +120,13 @@ void ApplyTheme() {
 
 void AppendLog(const std::wstring& msg) {
     if (!hLogEdit) return;
+
+    // Защита от переполнения памяти (очищаем лог, если он забит спамом)
+    int len = GetWindowTextLength(hLogEdit);
+    if (len > 25000) {
+        SendMessage(hLogEdit, WM_SETTEXT, 0, (LPARAM)L"");
+    }
+
     auto now = std::chrono::system_clock::now();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
     std::time_t t = std::chrono::system_clock::to_time_t(now);
@@ -144,7 +151,11 @@ void AppendLog(const std::wstring& msg) {
 void PressKey(WORD vkCode, const std::wstring& spellName) {
     INPUT input = {0}; input.type = INPUT_KEYBOARD; input.ki.wVk = vkCode;
     SendInput(1, &input, sizeof(INPUT));
-    std::this_thread::sleep_for(std::chrono::milliseconds(2)); // Снизил удержание с 10 до 2 мс для скорости
+    
+    // 15 мс — идеальное время удержания. Движок игры гарантированно регистрирует нажатие, 
+    // но при этом бот строчит достаточно быстро.
+    std::this_thread::sleep_for(std::chrono::milliseconds(15)); 
+    
     input.ki.dwFlags = KEYEVENTF_KEYUP; SendInput(1, &input, sizeof(INPUT));
     
     wchar_t btnName[2] = {(wchar_t)vkCode, 0};
@@ -291,8 +302,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_MEASUREITEM: {
             LPMEASUREITEMSTRUCT lpmis = (LPMEASUREITEMSTRUCT)lParam;
             if (lpmis->CtlType == ODT_MENU) {
-                lpmis->itemWidth = 140; // Ширина выпадающего меню
-                lpmis->itemHeight = 35; // Высота каждого пункта
+                lpmis->itemWidth = 140; 
+                lpmis->itemHeight = 35; 
                 return TRUE;
             }
             break;
@@ -324,7 +335,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_DRAWITEM: {
             LPDRAWITEMSTRUCT pdis = (LPDRAWITEMSTRUCT)lParam;
             if (pdis->CtlType == ODT_MENU) {
-                // Отрисовка кастомного выпадающего меню профилей
                 bool isSelected = (pdis->itemState & ODS_SELECTED);
                 FillRect(pdis->hDC, &pdis->rcItem, isSelected ? btnHoverBrush : bgBrush);
                 SetTextColor(pdis->hDC, textColor);
@@ -332,7 +342,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 
                 ProfileBinds* prof = (ProfileBinds*)pdis->itemData;
                 std::wstring text = prof->profileName[currentLang];
-                if (prof == currentProfile) text = L"\x2713 " + text; // Галочка
+                if (prof == currentProfile) text = L"\x2713 " + text; 
                 else text = L"    " + text;
 
                 HFONT hFont = CreateFontW(14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
@@ -374,7 +384,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_UPDATE_LOG: {
             std::wstring* msg = (std::wstring*)lParam;
             AppendLog(*msg);
-            delete msg; // Очищаем память после того как UI отрисовал текст
+            delete msg; 
             break;
         }
         case WM_COMMAND: {
@@ -394,11 +404,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 
                 MENUINFO mi = { sizeof(MENUINFO) };
                 mi.fMask = MIM_BACKGROUND | MIM_STYLE;
-                mi.dwStyle = MNS_NOCHECK; // Убираем дефолтные галочки винды
-                mi.hbrBack = bgBrush; // Красим сам фон выпадающего списка
+                mi.dwStyle = MNS_NOCHECK; 
+                mi.hbrBack = bgBrush; 
                 SetMenuInfo(hMenu, &mi);
 
-                // Добавляем наши кастомные отрисовываемые элементы
                 AppendMenuW(hMenu, MF_OWNERDRAW, 1001, (LPCWSTR)&rogueProfile);
                 AppendMenuW(hMenu, MF_OWNERDRAW, 1002, (LPCWSTR)&palaProfile);
                 
@@ -445,7 +454,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    timeBeginPeriod(1); // Форсируем системный таймер винды на 1 мс
+    timeBeginPeriod(1); 
     WNDCLASSW wc = {0}; wc.lpfnWndProc = WndProc; wc.hInstance = hInstance; wc.hbrBackground = NULL;
     wc.lpszClassName = L"PixelBotOverlay"; wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClassW(&wc);
@@ -480,7 +489,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
 
     botThread.join();
-    timeEndPeriod(1); // Освобождаем таймер при закрытии
+    timeEndPeriod(1); 
     if (bgBrush) DeleteObject(bgBrush); if (editBrush) DeleteObject(editBrush); if (btnBrush) DeleteObject(btnBrush);
     if (btnHoverBrush) DeleteObject(btnHoverBrush); if (closeBtnBrush) DeleteObject(closeBtnBrush); if (closeBtnHoverBrush) DeleteObject(closeBtnHoverBrush);
     return 0;
