@@ -92,7 +92,7 @@ void ApplyTheme() {
         btnBrush = CreateSolidBrush(RGB(50, 50, 55));
         btnHoverBrush = CreateSolidBrush(RGB(70, 70, 75));
         textColor = RGB(220, 220, 220);
-        logTextColor = RGB(0, 255, 0);
+        logTextColor = RGB(0, 255, 0); // Матричный зеленый
         bgColor = RGB(25, 25, 25);
         editBgColor = RGB(15, 15, 15);
     } else {
@@ -101,7 +101,7 @@ void ApplyTheme() {
         btnBrush = CreateSolidBrush(RGB(200, 200, 200));
         btnHoverBrush = CreateSolidBrush(RGB(170, 170, 170));
         textColor = RGB(10, 10, 10);
-        logTextColor = RGB(0, 0, 200);
+        logTextColor = RGB(0, 0, 200); // Синий для светлой темы
         bgColor = RGB(240, 240, 240);
         editBgColor = RGB(255, 255, 255);
     }
@@ -110,9 +110,6 @@ void ApplyTheme() {
 
     if (hLogEdit) {
         SendMessage(hLogEdit, EM_SETBKGNDCOLOR, 0, editBgColor);
-        CHARFORMAT2W cf; ZeroMemory(&cf, sizeof(cf));
-        cf.cbSize = sizeof(cf); cf.dwMask = CFM_COLOR; cf.crTextColor = logTextColor;
-        SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
     }
     if (hMainWnd) InvalidateRect(hMainWnd, NULL, TRUE);
 }
@@ -127,8 +124,15 @@ void AppendLog(const std::wstring& msg) {
     swprintf(timeBuf, 64, L"[%02d:%02d:%02d.%03d] ", tm.tm_hour, tm.tm_min, tm.tm_sec, (int)ms.count());
     std::wstring fullMsg = timeBuf + msg + L"\r\n";
     
+    // Выделяем конец текста, чтобы применить цвет только к новой строчке
     CHARRANGE cr; cr.cpMin = -1; cr.cpMax = -1;
     SendMessage(hLogEdit, EM_EXSETSEL, 0, (LPARAM)&cr);
+    
+    // Жестко форсируем цвет именно для места вставки
+    CHARFORMAT2W cf; ZeroMemory(&cf, sizeof(cf));
+    cf.cbSize = sizeof(cf); cf.dwMask = CFM_COLOR; cf.crTextColor = logTextColor;
+    SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+
     SendMessage(hLogEdit, EM_REPLACESEL, 0, (LPARAM)fullMsg.c_str());
     SendMessage(hLogEdit, WM_VSCROLL, SB_BOTTOM, 0);
 }
@@ -253,8 +257,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             hLogEdit = CreateWindowExW(0, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY, 310, 148, 180, 199, hWnd, NULL, NULL, NULL);
             SendMessage(hLogEdit, EM_SETBKGNDCOLOR, 0, editBgColor);
-            CHARFORMAT2W cf; ZeroMemory(&cf, sizeof(cf)); cf.cbSize = sizeof(cf); cf.dwMask = CFM_COLOR; cf.crTextColor = logTextColor;
-            SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
 
             hChkTopMost = CreateWindowW(L"BUTTON", L"", WS_CHILD | BS_AUTOCHECKBOX, 50, 120, 300, 30, hWnd, (HMENU)6, NULL, NULL);
             SendMessage(hChkTopMost, BM_SETCHECK, isTopMost ? BST_CHECKED : BST_UNCHECKED, 0);
@@ -275,6 +277,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             HWND elements[] = {hBtnClose, hStatStatus, hStatProfile, hDelayLabel, hDelayEdit, hLogEdit, hChkTopMost, hComboLang, hLangLabel, hComboTheme, hThemeLabel};
             for (HWND el : elements) SendMessage(el, WM_SETFONT, (WPARAM)hFont, TRUE);
             SendMessage(hLogEdit, WM_SETFONT, (WPARAM)hLogFont, TRUE);
+            break;
+        }
+        case WM_MEASUREITEM: {
+            LPMEASUREITEMSTRUCT lpmis = (LPMEASUREITEMSTRUCT)lParam;
+            if (lpmis->CtlType == ODT_MENU) {
+                lpmis->itemWidth = 140; // Ширина выпадающего меню
+                lpmis->itemHeight = 35; // Высота каждого пункта
+                return TRUE;
+            }
             break;
         }
         case WM_ERASEBKGND: {
@@ -303,11 +314,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_DRAWITEM: {
             LPDRAWITEMSTRUCT pdis = (LPDRAWITEMSTRUCT)lParam;
-            if (pdis->CtlID == 4) {
+            if (pdis->CtlType == ODT_MENU) {
+                // Отрисовка кастомного выпадающего меню профилей
+                bool isSelected = (pdis->itemState & ODS_SELECTED);
+                FillRect(pdis->hDC, &pdis->rcItem, isSelected ? btnHoverBrush : bgBrush);
+                SetTextColor(pdis->hDC, textColor);
+                SetBkMode(pdis->hDC, TRANSPARENT);
+                
+                ProfileBinds* prof = (ProfileBinds*)pdis->itemData;
+                std::wstring text = prof->profileName[currentLang];
+                if (prof == currentProfile) text = L"\x2713 " + text; // Галочка
+                else text = L"    " + text;
+
+                HFONT hFont = CreateFontW(14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+                HGDIOBJ oldFont = SelectObject(pdis->hDC, hFont);
+
+                RECT rcText = pdis->rcItem;
+                rcText.left += 10;
+                DrawTextW(pdis->hDC, text.c_str(), -1, &rcText, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                
+                SelectObject(pdis->hDC, oldFont); DeleteObject(hFont);
+                return TRUE;
+            }
+            else if (pdis->CtlID == 4) {
                 FillRect(pdis->hDC, &pdis->rcItem, (pdis->itemState & ODS_SELECTED) ? closeBtnHoverBrush : closeBtnBrush);
             } else if (pdis->CtlID >= 1 && pdis->CtlID <= 5) {
                 FillRect(pdis->hDC, &pdis->rcItem, (pdis->itemState & ODS_SELECTED) ? btnHoverBrush : btnBrush);
             } else return FALSE;
+            
             SetTextColor(pdis->hDC, (isDarkTheme || pdis->CtlID == 4) ? RGB(255, 255, 255) : RGB(10, 10, 10)); 
             SetBkMode(pdis->hDC, TRANSPARENT);
             wchar_t text[64]; GetWindowTextW(pdis->hwndItem, text, 64);
@@ -340,11 +374,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             } else if (wmId == 2) {
                 SaveBindsFromUI();
             } else if (wmId == 3) {
-                // Создаем контекстное меню под кнопкой
                 RECT rect; GetWindowRect(hBtnProfile, &rect);
                 HMENU hMenu = CreatePopupMenu();
-                AppendMenuW(hMenu, (currentProfile == &rogueProfile) ? MF_CHECKED : MF_UNCHECKED, 1001, rogueProfile.profileName[currentLang].c_str());
-                AppendMenuW(hMenu, (currentProfile == &palaProfile) ? MF_CHECKED : MF_UNCHECKED, 1002, palaProfile.profileName[currentLang].c_str());
+                
+                MENUINFO mi = { sizeof(MENUINFO) };
+                mi.fMask = MIM_BACKGROUND | MIM_STYLE;
+                mi.dwStyle = MNS_NOCHECK; // Убираем дефолтные галочки винды
+                mi.hbrBack = bgBrush; // Красим сам фон выпадающего списка
+                SetMenuInfo(hMenu, &mi);
+
+                // Добавляем наши кастомные отрисовываемые элементы
+                AppendMenuW(hMenu, MF_OWNERDRAW, 1001, (LPCWSTR)&rogueProfile);
+                AppendMenuW(hMenu, MF_OWNERDRAW, 1002, (LPCWSTR)&palaProfile);
                 
                 int selection = TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
                                                rect.left, rect.bottom, 0, hWnd, NULL);
