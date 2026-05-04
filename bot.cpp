@@ -1,5 +1,7 @@
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#pragma comment(lib, "winmm.lib")
 #include <windows.h>
+#include <mmsystem.h>
 #include <richedit.h>
 #include <string>
 #include <thread>
@@ -171,6 +173,7 @@ void BotLoop() {
             if (colorId != 0) {
                 PressKey(currentProfile->keys[colorId - 1], currentProfile->spellNames[colorId - 1][currentLang]);
                 std::this_thread::sleep_for(std::chrono::milliseconds(castDelayMs));
+                continue; // Пропускаем фоновый сон для максимальной скорострельности
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -442,6 +445,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    timeBeginPeriod(1); // Форсируем системный таймер винды на 1 мс
     WNDCLASSW wc = {0}; wc.lpfnWndProc = WndProc; wc.hInstance = hInstance; wc.hbrBackground = NULL;
     wc.lpszClassName = L"PixelBotOverlay"; wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClassW(&wc);
@@ -476,6 +480,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
 
     botThread.join();
+    timeEndPeriod(1); // Освобождаем таймер при закрытии
     if (bgBrush) DeleteObject(bgBrush); if (editBrush) DeleteObject(editBrush); if (btnBrush) DeleteObject(btnBrush);
     if (btnHoverBrush) DeleteObject(btnHoverBrush); if (closeBtnBrush) DeleteObject(closeBtnBrush); if (closeBtnHoverBrush) DeleteObject(closeBtnHoverBrush);
     return 0;
