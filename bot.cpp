@@ -69,7 +69,7 @@ ProfileBinds palaProfile = {
 ProfileBinds* currentProfile = &palaProfile;
 bool botActive = false;
 bool isRunning = true;
-int castDelayMs = 10; // Золотая середина для задержки между кастами
+int castDelayMs = 10;
 
 #define WM_UPDATE_LOG (WM_APP + 1)
 
@@ -96,7 +96,7 @@ void ApplyTheme() {
         btnBrush = CreateSolidBrush(RGB(50, 50, 55));
         btnHoverBrush = CreateSolidBrush(RGB(70, 70, 75));
         textColor = RGB(220, 220, 220);
-        logTextColor = RGB(0, 255, 0); // Матричный зеленый
+        logTextColor = RGB(0, 255, 0);
         bgColor = RGB(25, 25, 25);
         editBgColor = RGB(15, 15, 15);
     } else {
@@ -105,7 +105,7 @@ void ApplyTheme() {
         btnBrush = CreateSolidBrush(RGB(200, 200, 200));
         btnHoverBrush = CreateSolidBrush(RGB(170, 170, 170));
         textColor = RGB(10, 10, 10);
-        logTextColor = RGB(0, 0, 200); // Синий для светлой темы
+        logTextColor = RGB(0, 0, 200);
         bgColor = RGB(240, 240, 240);
         editBgColor = RGB(255, 255, 255);
     }
@@ -121,7 +121,6 @@ void ApplyTheme() {
 void AppendLog(const std::wstring& msg) {
     if (!hLogEdit) return;
 
-    // Защита от переполнения памяти (очищаем лог, если он забит спамом)
     int len = GetWindowTextLength(hLogEdit);
     if (len > 25000) {
         SendMessage(hLogEdit, WM_SETTEXT, 0, (LPARAM)L"");
@@ -135,11 +134,9 @@ void AppendLog(const std::wstring& msg) {
     swprintf(timeBuf, 64, L"[%02d:%02d:%02d.%03d] ", tm.tm_hour, tm.tm_min, tm.tm_sec, (int)ms.count());
     std::wstring fullMsg = timeBuf + msg + L"\r\n";
     
-    // Выделяем конец текста, чтобы применить цвет только к новой строчке
     CHARRANGE cr; cr.cpMin = -1; cr.cpMax = -1;
     SendMessage(hLogEdit, EM_EXSETSEL, 0, (LPARAM)&cr);
     
-    // Жестко форсируем цвет именно для места вставки
     CHARFORMAT2W cf; ZeroMemory(&cf, sizeof(cf));
     cf.cbSize = sizeof(cf); cf.dwMask = CFM_COLOR; cf.crTextColor = logTextColor;
     SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
@@ -152,15 +149,11 @@ void PressKey(WORD vkCode, const std::wstring& spellName) {
     INPUT input = {0}; input.type = INPUT_KEYBOARD; input.ki.wVk = vkCode;
     SendInput(1, &input, sizeof(INPUT));
     
-    // 15 мс — идеальное время удержания. Движок игры гарантированно регистрирует нажатие, 
-    // но при этом бот строчит достаточно быстро.
     std::this_thread::sleep_for(std::chrono::milliseconds(15)); 
     
     input.ki.dwFlags = KEYEVENTF_KEYUP; SendInput(1, &input, sizeof(INPUT));
     
     wchar_t btnName[2] = {(wchar_t)vkCode, 0};
-    
-    // Асинхронная отправка лога, чтобы не тормозить цикл сканирования пикселей
     std::wstring* logMsg = new std::wstring(L"[КАСТ] " + spellName + L" -> [" + btnName + L"]");
     PostMessage(hMainWnd, WM_UPDATE_LOG, 0, (LPARAM)logMsg);
 }
@@ -176,20 +169,46 @@ int ClassifyColor(int r, int g, int b) {
 }
 
 void BotLoop() {
-    HDC hdc = GetDC(NULL);
+    HDC hScreenDC = GetDC(NULL);
+    HDC hMemDC = CreateCompatibleDC(hScreenDC);
+
+    BITMAPINFO bmi = {0};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = 1;
+    bmi.bmiHeader.biHeight = -1; // Top-down DIB
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* pixels = nullptr;
+    HBITMAP hBitmap = CreateDIBSection(hScreenDC, &bmi, DIB_RGB_COLORS, &pixels, NULL, 0);
+    HBITMAP hOldBitmap = (HBITMAP)SelectObject(hMemDC, hBitmap);
+
     while (isRunning) {
         if (botActive) {
-            COLORREF color = GetPixel(hdc, 0, 0);
-            int colorId = ClassifyColor(GetRValue(color), GetGValue(color), GetBValue(color));
+            // Оборудование видеокарты напрямую копирует пиксель в выделенную оперативную память
+            BitBlt(hMemDC, 0, 0, 1, 1, hScreenDC, 0, 0, SRCCOPY);
+
+            // Читаем сырые байты (формат BGRA в Windows)
+            BYTE* p = (BYTE*)pixels;
+            int b = p[0];
+            int g = p[1];
+            int r = p[2];
+
+            int colorId = ClassifyColor(r, g, b);
             if (colorId != 0) {
                 PressKey(currentProfile->keys[colorId - 1], currentProfile->spellNames[colorId - 1][currentLang]);
                 std::this_thread::sleep_for(std::chrono::milliseconds(castDelayMs));
-                continue; // Пропускаем фоновый сон для максимальной скорострельности
+                continue; 
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2)); // Снижено до 2 мс для максимальной скорости сканирования
     }
-    ReleaseDC(NULL, hdc);
+
+    SelectObject(hMemDC, hOldBitmap);
+    DeleteObject(hBitmap);
+    DeleteDC(hMemDC);
+    ReleaseDC(NULL, hScreenDC);
 }
 
 void UpdateUIStrings() {
