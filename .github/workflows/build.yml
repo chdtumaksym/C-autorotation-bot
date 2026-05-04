@@ -13,11 +13,11 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1 # Этот экшен как раз "прописывает" cl.exe в систему
+      uses: ilammy/msvc-dev-cmd@v1
 
     - name: Compile Bot
       run: |
-        cl.exe /EHsc /O2 /W3 /MT /D UNICODE /D _UNICODE bot.cpp user32.lib gdi32.lib shell32.lib comctl32.lib /Fe:PixelBot.exe
+        cl.exe /utf-8 /EHsc /O2 /W3 /MT /D UNICODE /D _UNICODE bot.cpp user32.lib gdi32.lib shell32.lib comctl32.lib /Fe:PixelBot.exe
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
