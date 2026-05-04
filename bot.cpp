@@ -14,7 +14,7 @@ bool isDarkTheme = true;
 
 const wchar_t* uiStrs[][3] = {
     { L"ON / OFF (F9)", L"ВКЛ / ВЫКЛ (F9)", L"УВІМК / ВИМК (F9)" },
-    { L"PROFILE (F2)", L"ПРОФИЛЬ (F2)", L"ПРОФІЛЬ (F2)" },
+    { L"PROFILE \x25BC", L"ПРОФИЛЬ \x25BC", L"ПРОФІЛЬ \x25BC" },
     { L"SAVE", L"СОХРАНИТЬ", L"ЗБЕРЕГТИ" },
     { L"SETTINGS", L"НАСТРОЙКИ", L"НАЛАШТУВАННЯ" },
     { L"STATUS: ACTIVE (RUNNING)", L"СТАТУС: АКТИВЕН (РАБОТАЕТ)", L"СТАТУС: АКТИВНИЙ (ПРАЦЮЄ)" },
@@ -224,14 +224,6 @@ void ToggleSettingsView() {
     InvalidateRect(hMainWnd, NULL, TRUE);
 }
 
-void ShowProfilePopup() {
-    std::wstring title = uiStrs[13][currentLang];
-    std::wstring text = currentProfile->profileName[currentLang];
-    std::thread([text, title]() {
-        MessageBoxW(NULL, text.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
-    }).detach();
-}
-
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE: {
@@ -290,7 +282,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             RECT rc;
             GetClientRect(hWnd, &rc);
             FillRect(hdc, &rc, bgBrush);
-            return 1; // Фон очищен вручную, фантомов не будет
+            return 1; 
         }
         case WM_PAINT: {
             PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
@@ -348,11 +340,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             } else if (wmId == 2) {
                 SaveBindsFromUI();
             } else if (wmId == 3) {
-                currentProfile = (currentProfile == &palaProfile) ? &rogueProfile : &palaProfile;
-                LoadBindsToUI();
-                AppendLog(std::wstring(uiStrs[13][currentLang]) + L": " + currentProfile->profileName[currentLang]);
-                InvalidateRect(hMainWnd, NULL, TRUE);
-                ShowProfilePopup();
+                // Создаем контекстное меню под кнопкой
+                RECT rect; GetWindowRect(hBtnProfile, &rect);
+                HMENU hMenu = CreatePopupMenu();
+                AppendMenuW(hMenu, (currentProfile == &rogueProfile) ? MF_CHECKED : MF_UNCHECKED, 1001, rogueProfile.profileName[currentLang].c_str());
+                AppendMenuW(hMenu, (currentProfile == &palaProfile) ? MF_CHECKED : MF_UNCHECKED, 1002, palaProfile.profileName[currentLang].c_str());
+                
+                int selection = TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
+                                               rect.left, rect.bottom, 0, hWnd, NULL);
+                DestroyMenu(hMenu);
+
+                if (selection == 1001 && currentProfile != &rogueProfile) {
+                    currentProfile = &rogueProfile;
+                    LoadBindsToUI();
+                    AppendLog(std::wstring(uiStrs[13][currentLang]) + L": " + currentProfile->profileName[currentLang]);
+                    InvalidateRect(hMainWnd, NULL, TRUE);
+                } else if (selection == 1002 && currentProfile != &palaProfile) {
+                    currentProfile = &palaProfile;
+                    LoadBindsToUI();
+                    AppendLog(std::wstring(uiStrs[13][currentLang]) + L": " + currentProfile->profileName[currentLang]);
+                    InvalidateRect(hMainWnd, NULL, TRUE);
+                }
             } else if (wmId == 4) {
                 isRunning = false; PostQuitMessage(0);
             } else if (wmId == 5) {
@@ -395,7 +403,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     AppendLog(uiStrs[14][currentLang]);
 
     std::thread botThread(BotLoop);
-    MSG msg; bool f9_pressed = false; bool f2_pressed = false;
+    MSG msg; bool f9_pressed = false;
 
     while (isRunning) {
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
@@ -410,16 +418,6 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                 InvalidateRect(hStatStatus, NULL, TRUE); f9_pressed = true; 
             }
         } else f9_pressed = false;
-
-        if (GetAsyncKeyState(VK_F2) & 0x8000) {
-            if (!f2_pressed) { 
-                currentProfile = (currentProfile == &palaProfile) ? &rogueProfile : &palaProfile;
-                LoadBindsToUI();
-                AppendLog(std::wstring(uiStrs[13][currentLang]) + L": " + currentProfile->profileName[currentLang]);
-                InvalidateRect(hMainWnd, NULL, TRUE); f2_pressed = true; 
-                ShowProfilePopup();
-            }
-        } else f2_pressed = false;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
