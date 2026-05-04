@@ -1,9 +1,34 @@
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #include <windows.h>
+#include <richedit.h>
 #include <string>
 #include <thread>
 #include <chrono>
 #include <ctime>
+
+enum Lang { EN = 0, RU = 1, UA = 2 };
+Lang currentLang = RU;
+bool showSettings = false;
+bool isTopMost = true;
+
+const wchar_t* uiStrs[][3] = {
+    { L"ON / OFF (F9)", L"ВКЛ / ВЫКЛ (F9)", L"УВІМК / ВИМК (F9)" },
+    { L"PROFILE (F2)", L"ПРОФИЛЬ (F2)", L"ПРОФІЛЬ (F2)" },
+    { L"SAVE", L"СОХРАНИТЬ", L"ЗБЕРЕГТИ" },
+    { L"SETTINGS", L"НАСТРОЙКИ", L"НАЛАШТУВАННЯ" },
+    { L"STATUS: ACTIVE (RUNNING)", L"СТАТУС: АКТИВЕН (РАБОТАЕТ)", L"СТАТУС: АКТИВНИЙ (ПРАЦЮЄ)" },
+    { L"STATUS: WAITING (PAUSED)", L"СТАТУС: ОЖИДАНИЕ (ПАУЗА)", L"СТАТУС: ОЧІКУВАННЯ (ПАУЗА)" },
+    { L"PROFILE: ", L"ПРОФИЛЬ: ", L"ПРОФІЛЬ: " },
+    { L"Delay (ms):", L"Задержка (мс):", L"Затримка (мс):" },
+    { L"Always on top (Overlay)", L"Оверлей поверх всех окон", L"Оверлей поверх усіх вікон" },
+    { L"Interface Language:", L"Язык интерфейса:", L"Мова інтерфейсу:" },
+    { L">> BOT STARTED", L">> БОТ ЗАПУЩЕН", L">> БОТ ЗАПУЩЕНО" },
+    { L">> BOT STOPPED", L">> БОТ ОСТАНОВЛЕН", L">> БОТ ЗУПИНЕНО" },
+    { L"--- BINDS & SETTINGS SAVED ---", L"--- БИНДЫ И НАСТРОЙКИ СОХРАНЕНЫ ---", L"--- БІНДИ ТА НАЛАШТУВАННЯ ЗБЕРЕЖЕНО ---" },
+    { L">> PROFILE CHANGED: ", L">> СМЕНА ПРОФИЛЯ: ", L">> ЗМІНА ПРОФІЛЮ: " },
+    { L"System loaded. F9 - Start/Stop.", L"Система загружена. F9 - Старт/Стоп.", L"Система завантажена. F9 - Старт/Стоп." },
+    { L"BACK", L"НАЗАД", L"НАЗАД" }
+};
 
 struct ProfileBinds {
     std::wstring profileName;
@@ -12,28 +37,24 @@ struct ProfileBinds {
 };
 
 ProfileBinds rogueProfile = {
-    L"РОГА (ROGUE)",
-    '1', '2', '3', '4', '5', '6',
-    L"Коварный удар", L"Мясорубка", L"Потрошение", 
-    L"Череда убийств", L"Выброс адреналина", L"Шквал клинков"
+    L"РОГА (ROGUE)", '1', '2', '3', '4', '5', '6',
+    L"Коварный удар", L"Мясорубка", L"Потрошение", L"Череда убийств", L"Выброс адреналина", L"Шквал клинков"
 };
 
 ProfileBinds palaProfile = {
-    L"ПАЛАДИН (PALADIN)",
-    'R', '1', '2', 'Q', '4', '5',
-    L"Правосудие", L"Божественная буря", L"Удар воина Света", 
-    L"Молот гнева", L"Экзорцизм", L"Освящение"
+    L"ПАЛАДИН (PALADIN)", 'R', '1', '2', 'Q', '4', '5',
+    L"Правосудие", L"Божественная буря", L"Удар воина Света", L"Молот гнева", L"Экзорцизм", L"Освящение"
 };
 
-ProfileBinds* currentProfile = &rogueProfile;
+ProfileBinds* currentProfile = &palaProfile;
 bool botActive = false;
 bool isRunning = true;
 int castDelayMs = 20;
 
-HWND hMainWnd, hBtnToggle, hBtnProfile, hBtnSave, hBtnClose, hStatStatus, hStatProfile, hDelayLabel, hDelayEdit;
-HWND hBindsLabels[6];
-HWND hBindsEdits[6];
+HWND hMainWnd, hBtnToggle, hBtnProfile, hBtnSave, hBtnSettings, hBtnClose, hStatStatus, hStatProfile, hDelayLabel, hDelayEdit;
+HWND hBindsLabels[6], hBindsEdits[6];
 HWND hLogEdit;
+HWND hChkTopMost, hComboLang, hLangLabel;
 
 HBRUSH bgBrush = CreateSolidBrush(RGB(25, 25, 25));
 HBRUSH editBrush = CreateSolidBrush(RGB(15, 15, 15));
@@ -47,14 +68,16 @@ void AppendLog(const std::wstring& msg) {
     auto now = std::chrono::system_clock::now();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
     std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm;
-    localtime_s(&tm, &t);
+    std::tm tm; localtime_s(&tm, &t);
     wchar_t timeBuf[64];
     swprintf(timeBuf, 64, L"[%02d:%02d:%02d.%03d] ", tm.tm_hour, tm.tm_min, tm.tm_sec, (int)ms.count());
     std::wstring fullMsg = timeBuf + msg + L"\r\n";
-    int len = GetWindowTextLength(hLogEdit);
-    SendMessage(hLogEdit, EM_SETSEL, (WPARAM)len, (LPARAM)len);
+    
+    CHARRANGE cr;
+    cr.cpMin = -1; cr.cpMax = -1;
+    SendMessage(hLogEdit, EM_EXSETSEL, 0, (LPARAM)&cr);
     SendMessage(hLogEdit, EM_REPLACESEL, 0, (LPARAM)fullMsg.c_str());
+    SendMessage(hLogEdit, WM_VSCROLL, SB_BOTTOM, 0);
 }
 
 void PressKey(WORD vkCode, const std::wstring& spellName) {
@@ -102,6 +125,18 @@ void BotLoop() {
     ReleaseDC(NULL, hdc);
 }
 
+void UpdateUIStrings() {
+    SetWindowTextW(hBtnToggle, uiStrs[0][currentLang]);
+    SetWindowTextW(hBtnProfile, uiStrs[1][currentLang]);
+    SetWindowTextW(hBtnSave, uiStrs[2][currentLang]);
+    SetWindowTextW(hBtnSettings, showSettings ? uiStrs[15][currentLang] : uiStrs[3][currentLang]);
+    SetWindowTextW(hStatStatus, botActive ? uiStrs[4][currentLang] : uiStrs[5][currentLang]);
+    SetWindowTextW(hStatProfile, (std::wstring(uiStrs[6][currentLang]) + currentProfile->profileName).c_str());
+    SetWindowTextW(hDelayLabel, uiStrs[7][currentLang]);
+    SetWindowTextW(hChkTopMost, uiStrs[8][currentLang]);
+    SetWindowTextW(hLangLabel, uiStrs[9][currentLang]);
+}
+
 void LoadBindsToUI() {
     std::wstring names[] = {currentProfile->nameRed, currentProfile->nameGreen, currentProfile->nameBlue, 
                             currentProfile->nameYellow, currentProfile->nameCyan, currentProfile->nameMagenta};
@@ -112,51 +147,59 @@ void LoadBindsToUI() {
         wchar_t buf[2] = {(wchar_t)keys[i], 0};
         SetWindowTextW(hBindsEdits[i], buf);
     }
-    SetWindowTextW(hStatProfile, (L"ПРОФИЛЬ: " + currentProfile->profileName).c_str());
-    
-    wchar_t delayBuf[10];
-    swprintf(delayBuf, 10, L"%d", castDelayMs);
+    wchar_t delayBuf[10]; swprintf(delayBuf, 10, L"%d", castDelayMs);
     SetWindowTextW(hDelayEdit, delayBuf);
+    UpdateUIStrings();
 }
 
 void SaveBindsFromUI() {
     WORD* profileKeys[] = {&currentProfile->keyRed, &currentProfile->keyGreen, &currentProfile->keyBlue, 
                            &currentProfile->keyYellow, &currentProfile->keyCyan, &currentProfile->keyMagenta};
     for (int i = 0; i < 6; i++) {
-        wchar_t buf[10];
-        GetWindowTextW(hBindsEdits[i], buf, 10);
+        wchar_t buf[10]; GetWindowTextW(hBindsEdits[i], buf, 10);
         if (wcslen(buf) > 0) *profileKeys[i] = towupper(buf[0]);
     }
+    wchar_t delayBuf[10]; GetWindowTextW(hDelayEdit, delayBuf, 10);
+    castDelayMs = _wtoi(delayBuf); if (castDelayMs < 0) castDelayMs = 0;
     
-    wchar_t delayBuf[10];
-    GetWindowTextW(hDelayEdit, delayBuf, 10);
-    castDelayMs = _wtoi(delayBuf);
-    if (castDelayMs < 0) castDelayMs = 0;
-    
-    AppendLog(L"--- БИНДЫ И НАСТРОЙКИ СОХРАНЕНЫ ---");
+    AppendLog(uiStrs[12][currentLang]);
     LoadBindsToUI();
 }
 
-void UpdateStatusUI() {
-    SetWindowTextW(hStatStatus, botActive ? L"СТАТУС: АКТИВЕН (РАБОТАЕТ)" : L"СТАТУС: ОЖИДАНИЕ (ПАУЗА)");
+void ToggleSettingsView() {
+    showSettings = !showSettings;
+    int showMain = showSettings ? SW_HIDE : SW_SHOW;
+    int showSet = showSettings ? SW_SHOW : SW_HIDE;
+    
+    ShowWindow(hStatStatus, showMain); ShowWindow(hStatProfile, showMain);
+    ShowWindow(hDelayLabel, showMain); ShowWindow(hDelayEdit, showMain);
+    ShowWindow(hLogEdit, showMain);
+    for (int i = 0; i < 6; i++) { ShowWindow(hBindsLabels[i], showMain); ShowWindow(hBindsEdits[i], showMain); }
+    
+    ShowWindow(hChkTopMost, showSet);
+    ShowWindow(hComboLang, showSet);
+    ShowWindow(hLangLabel, showSet);
+    
+    UpdateUIStrings();
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE: {
+            LoadLibraryW(L"Msftedit.dll"); // Required for RichEdit
             HFONT hFont = CreateFontW(15, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-            HFONT hLogFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_MODERN, L"Consolas");
+            HFONT hLogFont = CreateFontW(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_MODERN, L"Consolas");
             
             hBtnClose = CreateWindowW(L"BUTTON", L"X", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 475, 5, 30, 30, hWnd, (HMENU)4, NULL, NULL);
-            hBtnToggle = CreateWindowW(L"BUTTON", L"ВКЛ / ВЫКЛ (F9)", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 20, 45, 150, 40, hWnd, (HMENU)1, NULL, NULL);
-            hBtnProfile = CreateWindowW(L"BUTTON", L"ПРОФИЛЬ (F2)", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 180, 45, 150, 40, hWnd, (HMENU)3, NULL, NULL);
-            hBtnSave = CreateWindowW(L"BUTTON", L"СОХРАНИТЬ", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 340, 45, 130, 40, hWnd, (HMENU)2, NULL, NULL);
+            hBtnToggle = CreateWindowW(L"BUTTON", L"", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 20, 45, 120, 35, hWnd, (HMENU)1, NULL, NULL);
+            hBtnProfile = CreateWindowW(L"BUTTON", L"", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 145, 45, 110, 35, hWnd, (HMENU)3, NULL, NULL);
+            hBtnSettings = CreateWindowW(L"BUTTON", L"", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 260, 45, 120, 35, hWnd, (HMENU)5, NULL, NULL);
+            hBtnSave = CreateWindowW(L"BUTTON", L"", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 385, 45, 105, 35, hWnd, (HMENU)2, NULL, NULL);
             
             hStatStatus = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 20, 95, 300, 20, hWnd, NULL, NULL, NULL);
             hStatProfile = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 20, 115, 300, 20, hWnd, NULL, NULL, NULL);
-            
-            hDelayLabel = CreateWindowW(L"STATIC", L"Задержка (мс):", WS_CHILD | WS_VISIBLE, 340, 95, 100, 20, hWnd, NULL, NULL, NULL);
-            hDelayEdit = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_CENTER | ES_NUMBER, 440, 93, 30, 22, hWnd, NULL, NULL, NULL);
+            hDelayLabel = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 340, 95, 100, 20, hWnd, NULL, NULL, NULL);
+            hDelayEdit = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_CENTER | ES_NUMBER, 450, 93, 40, 22, hWnd, NULL, NULL, NULL);
 
             for (int i = 0; i < 6; i++) {
                 hBindsLabels[i] = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 20, 150 + (i * 35), 220, 20, hWnd, NULL, NULL, NULL);
@@ -166,59 +209,59 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 SendMessage(hBindsEdits[i], EM_SETLIMITTEXT, 1, 0);
             }
 
-            hLogEdit = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY, 310, 148, 180, 199, hWnd, NULL, NULL, NULL);
-            
-            HWND elements[] = {hBtnClose, hStatStatus, hStatProfile, hDelayLabel, hDelayEdit, hLogEdit};
+            // Использование RichEdit спасает от багов скролла с кастомным фоном
+            hLogEdit = CreateWindowExW(0, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY, 310, 148, 180, 199, hWnd, NULL, NULL, NULL);
+            SendMessage(hLogEdit, EM_SETBKGNDCOLOR, 0, RGB(20, 20, 20));
+            CHARFORMAT2W cf = {0}; cf.cbSize = sizeof(cf); cf.dwMask = CFM_COLOR; cf.crTextColor = RGB(0, 255, 0);
+            SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
+
+            // Settings Elements
+            hChkTopMost = CreateWindowW(L"BUTTON", L"", WS_CHILD | BS_AUTOCHECKBOX, 50, 150, 300, 30, hWnd, (HMENU)6, NULL, NULL);
+            SendMessage(hChkTopMost, BM_SETCHECK, isTopMost ? BST_CHECKED : BST_UNCHECKED, 0);
+            hLangLabel = CreateWindowW(L"STATIC", L"", WS_CHILD, 50, 200, 150, 20, hWnd, NULL, NULL, NULL);
+            hComboLang = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | CBS_DROPDOWNLIST | WS_VSCROLL, 200, 198, 150, 100, hWnd, (HMENU)7, NULL, NULL);
+            SendMessage(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"English");
+            SendMessage(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"Русский");
+            SendMessage(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"Українська");
+            SendMessage(hComboLang, CB_SETCURSEL, currentLang, 0);
+
+            HWND elements[] = {hBtnClose, hStatStatus, hStatProfile, hDelayLabel, hDelayEdit, hLogEdit, hChkTopMost, hComboLang, hLangLabel};
             for (HWND el : elements) SendMessage(el, WM_SETFONT, (WPARAM)hFont, TRUE);
             SendMessage(hLogEdit, WM_SETFONT, (WPARAM)hLogFont, TRUE);
             break;
         }
         case WM_PAINT: {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            SetTextColor(hdc, RGB(200, 200, 200));
-            SetBkMode(hdc, TRANSPARENT);
+            PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+            SetTextColor(hdc, RGB(200, 200, 200)); SetBkMode(hdc, TRANSPARENT);
             HFONT hFont = CreateFontW(14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-            SelectObject(hdc, hFont);
-            RECT rt = {20, 10, 300, 30};
-            DrawTextW(hdc, L"WoW Pixel Bot - Overlay Edition", -1, &rt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            DeleteObject(hFont);
-            EndPaint(hWnd, &ps);
+            SelectObject(hdc, hFont); RECT rt = {20, 10, 300, 30};
+            DrawTextW(hdc, L"WoW Pixel Bot - Premium Overlay", -1, &rt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            DeleteObject(hFont); EndPaint(hWnd, &ps);
             break;
         }
         case WM_NCHITTEST: {
             LRESULT hit = DefWindowProcW(hWnd, msg, wParam, lParam);
             if (hit == HTCLIENT) {
-                POINT pt;
-                pt.x = (short)LOWORD(lParam);
-                pt.y = (short)HIWORD(lParam);
+                POINT pt; pt.x = (short)LOWORD(lParam); pt.y = (short)HIWORD(lParam);
                 ScreenToClient(hWnd, &pt);
-                if (pt.y < 40) return HTCAPTION; // Позволяет таскать окно за верхнюю часть
+                if (pt.y < 40) return HTCAPTION; // Драг за шапку
             }
             return hit;
         }
         case WM_DRAWITEM: {
             LPDRAWITEMSTRUCT pdis = (LPDRAWITEMSTRUCT)lParam;
-            if (pdis->CtlID == 4) { // Кнопка закрытия
+            if (pdis->CtlID == 4) {
                 FillRect(pdis->hDC, &pdis->rcItem, (pdis->itemState & ODS_SELECTED) ? closeBtnHoverBrush : closeBtnBrush);
-                SetTextColor(pdis->hDC, RGB(255, 255, 255));
-                SetBkMode(pdis->hDC, TRANSPARENT);
-                DrawTextW(pdis->hDC, L"X", -1, &pdis->rcItem, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                return TRUE;
-            } else if (pdis->CtlID == 1 || pdis->CtlID == 2 || pdis->CtlID == 3) {
+            } else if (pdis->CtlID >= 1 && pdis->CtlID <= 5) {
                 FillRect(pdis->hDC, &pdis->rcItem, (pdis->itemState & ODS_SELECTED) ? btnHoverBrush : btnBrush);
-                SetTextColor(pdis->hDC, RGB(255, 255, 255));
-                SetBkMode(pdis->hDC, TRANSPARENT);
-                wchar_t text[64];
-                GetWindowTextW(pdis->hwndItem, text, 64);
-                DrawTextW(pdis->hDC, text, -1, &pdis->rcItem, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                return TRUE;
-            }
-            break;
+            } else return FALSE;
+            SetTextColor(pdis->hDC, RGB(255, 255, 255)); SetBkMode(pdis->hDC, TRANSPARENT);
+            wchar_t text[64]; GetWindowTextW(pdis->hwndItem, text, 64);
+            DrawTextW(pdis->hDC, text, -1, &pdis->rcItem, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            return TRUE;
         }
         case WM_CTLCOLORSTATIC: {
-            HDC hdc = (HDC)wParam;
-            HWND hwnd = (HWND)lParam;
+            HDC hdc = (HDC)wParam; HWND hwnd = (HWND)lParam;
             SetBkMode(hdc, TRANSPARENT);
             if (hwnd == hStatStatus) SetTextColor(hdc, botActive ? RGB(0, 255, 100) : RGB(255, 100, 100));
             else if (hwnd == hStatProfile) SetTextColor(hdc, RGB(100, 200, 255));
@@ -226,36 +269,44 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return (INT_PTR)bgBrush;
         }
         case WM_CTLCOLOREDIT: {
-            HDC hdc = (HDC)wParam;
-            HWND hwnd = (HWND)lParam;
-            SetBkColor(hdc, RGB(20, 20, 20));
-            if (hwnd == hLogEdit) SetTextColor(hdc, RGB(0, 255, 0));
-            else SetTextColor(hdc, RGB(255, 255, 255));
+            HDC hdc = (HDC)wParam; HWND hwnd = (HWND)lParam;
+            SetBkMode(hdc, OPAQUE); SetBkColor(hdc, RGB(20, 20, 20));
+            SetTextColor(hdc, RGB(255, 255, 255));
             return (INT_PTR)editBrush;
         }
         case WM_COMMAND: {
-            if (LOWORD(wParam) == 1) {
-                botActive = !botActive;
-                UpdateStatusUI();
-                AppendLog(botActive ? L">> БОТ ЗАПУЩЕН" : L">> БОТ ОСТАНОВЛЕН");
+            int wmId = LOWORD(wParam); int wmEvent = HIWORD(wParam);
+            if (wmEvent == EN_SETFOCUS) {
+                // Автовыделение текста при клике на поле (чтоб не стирать ручками)
+                for (int i=0; i<6; i++) if ((HWND)lParam == hBindsEdits[i]) SendMessage(hBindsEdits[i], EM_SETSEL, 0, -1);
+            }
+            if (wmId == 1) {
+                botActive = !botActive; UpdateUIStrings();
+                AppendLog(botActive ? uiStrs[10][currentLang] : uiStrs[11][currentLang]);
                 InvalidateRect(hStatStatus, NULL, TRUE);
-            } else if (LOWORD(wParam) == 2) {
+            } else if (wmId == 2) {
                 SaveBindsFromUI();
-            } else if (LOWORD(wParam) == 3) {
+            } else if (wmId == 3) {
                 currentProfile = (currentProfile == &palaProfile) ? &rogueProfile : &palaProfile;
                 LoadBindsToUI();
-                AppendLog(L">> СМЕНА ПРОФИЛЯ: " + currentProfile->profileName);
+                AppendLog(std::wstring(uiStrs[13][currentLang]) + currentProfile->profileName);
                 InvalidateRect(hStatProfile, NULL, TRUE);
-            } else if (LOWORD(wParam) == 4) {
-                isRunning = false;
-                PostQuitMessage(0);
+            } else if (wmId == 4) {
+                isRunning = false; PostQuitMessage(0);
+            } else if (wmId == 5) {
+                ToggleSettingsView();
+            } else if (wmId == 6) { // Checkbox TopMost
+                isTopMost = (SendMessage(hChkTopMost, BM_GETCHECK, 0, 0) == BST_CHECKED);
+                SetWindowPos(hMainWnd, isTopMost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            } else if (wmId == 7 && wmEvent == CBN_SELCHANGE) { // Combobox Lang
+                currentLang = (Lang)SendMessage(hComboLang, CB_GETCURSEL, 0, 0);
+                UpdateUIStrings();
             }
-            SetFocus(hWnd);
+            if (wmId >= 1 && wmId <= 5) SetFocus(hWnd); // Убираем фокус с кнопок
             break;
         }
         case WM_DESTROY:
-            isRunning = false;
-            PostQuitMessage(0);
+            isRunning = false; PostQuitMessage(0);
             break;
         default:
             return DefWindowProcW(hWnd, msg, wParam, lParam);
@@ -264,50 +315,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    WNDCLASSW wc = {0};
-    wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInstance;
-    wc.hbrBackground = bgBrush;
-    wc.lpszClassName = L"PixelBotOverlay";
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    WNDCLASSW wc = {0}; wc.lpfnWndProc = WndProc; wc.hInstance = hInstance; wc.hbrBackground = bgBrush;
+    wc.lpszClassName = L"PixelBotOverlay"; wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClassW(&wc);
 
-    int screenW = GetSystemMetrics(SM_CXSCREEN);
-    int screenH = GetSystemMetrics(SM_CYSCREEN);
-    
-    // WS_POPUP убирает рамки винды, WS_EX_TOPMOST поверх всех окон, WS_EX_LAYERED для прозрачности
+    int screenW = GetSystemMetrics(SM_CXSCREEN); int screenH = GetSystemMetrics(SM_CYSCREEN);
     hMainWnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_LAYERED, L"PixelBotOverlay", L"WoW Pixel Bot", 
                                WS_POPUP | WS_VISIBLE, (screenW - 510) / 2, (screenH - 370) / 2, 510, 370, NULL, NULL, hInstance, NULL);
 
-    SetLayeredWindowAttributes(hMainWnd, 0, 230, LWA_ALPHA); // 230 из 255 (90% непрозрачности)
+    SetLayeredWindowAttributes(hMainWnd, 0, 240, LWA_ALPHA); // 94% непрозрачности
 
-    LoadBindsToUI();
-    UpdateStatusUI();
-    AppendLog(L"Оверлей загружен. F9 - Старт/Стоп.");
+    LoadBindsToUI(); UpdateUIStrings();
+    AppendLog(uiStrs[14][currentLang]);
 
     std::thread botThread(BotLoop);
-
-    MSG msg;
-    bool f9_pressed = false;
-    bool f2_pressed = false;
+    MSG msg; bool f9_pressed = false; bool f2_pressed = false;
 
     while (isRunning) {
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) {
-                isRunning = false;
-                break;
-            }
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
+            if (msg.message == WM_QUIT) { isRunning = false; break; }
+            TranslateMessage(&msg); DispatchMessage(&msg);
         }
 
         if (GetAsyncKeyState(VK_F9) & 0x8000) {
             if (!f9_pressed) { 
-                botActive = !botActive; 
-                UpdateStatusUI(); 
-                AppendLog(botActive ? L">> БОТ ЗАПУЩЕН" : L">> БОТ ОСТАНОВЛЕН");
-                InvalidateRect(hStatStatus, NULL, TRUE);
-                f9_pressed = true; 
+                botActive = !botActive; UpdateUIStrings(); 
+                AppendLog(botActive ? uiStrs[10][currentLang] : uiStrs[11][currentLang]);
+                InvalidateRect(hStatStatus, NULL, TRUE); f9_pressed = true; 
             }
         } else f9_pressed = false;
 
@@ -315,9 +349,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             if (!f2_pressed) { 
                 currentProfile = (currentProfile == &palaProfile) ? &rogueProfile : &palaProfile;
                 LoadBindsToUI();
-                AppendLog(L">> СМЕНА ПРОФИЛЯ: " + currentProfile->profileName);
-                InvalidateRect(hStatProfile, NULL, TRUE);
-                f2_pressed = true; 
+                AppendLog(std::wstring(uiStrs[13][currentLang]) + currentProfile->profileName);
+                InvalidateRect(hStatProfile, NULL, TRUE); f2_pressed = true; 
             }
         } else f2_pressed = false;
 
@@ -325,11 +358,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
 
     botThread.join();
-    DeleteObject(bgBrush);
-    DeleteObject(editBrush);
-    DeleteObject(btnBrush);
-    DeleteObject(btnHoverBrush);
-    DeleteObject(closeBtnBrush);
-    DeleteObject(closeBtnHoverBrush);
+    DeleteObject(bgBrush); DeleteObject(editBrush); DeleteObject(btnBrush);
+    DeleteObject(btnHoverBrush); DeleteObject(closeBtnBrush); DeleteObject(closeBtnHoverBrush);
     return 0;
 }
