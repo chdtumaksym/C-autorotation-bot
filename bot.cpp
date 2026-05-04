@@ -112,7 +112,7 @@ void ApplyTheme() {
         SendMessage(hLogEdit, EM_SETBKGNDCOLOR, 0, editBgColor);
         CHARFORMAT2W cf; ZeroMemory(&cf, sizeof(cf));
         cf.cbSize = sizeof(cf); cf.dwMask = CFM_COLOR; cf.crTextColor = logTextColor;
-        SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&cf);
+        SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
     }
     if (hMainWnd) InvalidateRect(hMainWnd, NULL, TRUE);
 }
@@ -193,6 +193,7 @@ void LoadBindsToUI() {
     wchar_t delayBuf[10]; swprintf(delayBuf, 10, L"%d", castDelayMs);
     SetWindowTextW(hDelayEdit, delayBuf);
     UpdateUIStrings();
+    InvalidateRect(hMainWnd, NULL, TRUE);
 }
 
 void SaveBindsFromUI() {
@@ -220,6 +221,7 @@ void ToggleSettingsView() {
     ShowWindow(hComboLang, showSet); ShowWindow(hLangLabel, showSet);
     ShowWindow(hComboTheme, showSet); ShowWindow(hThemeLabel, showSet);
     UpdateUIStrings();
+    InvalidateRect(hMainWnd, NULL, TRUE);
 }
 
 void ShowProfilePopup() {
@@ -260,7 +262,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             hLogEdit = CreateWindowExW(0, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY, 310, 148, 180, 199, hWnd, NULL, NULL, NULL);
             SendMessage(hLogEdit, EM_SETBKGNDCOLOR, 0, editBgColor);
             CHARFORMAT2W cf; ZeroMemory(&cf, sizeof(cf)); cf.cbSize = sizeof(cf); cf.dwMask = CFM_COLOR; cf.crTextColor = logTextColor;
-            SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&cf);
+            SendMessage(hLogEdit, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
 
             hChkTopMost = CreateWindowW(L"BUTTON", L"", WS_CHILD | BS_AUTOCHECKBOX, 50, 120, 300, 30, hWnd, (HMENU)6, NULL, NULL);
             SendMessage(hChkTopMost, BM_SETCHECK, isTopMost ? BST_CHECKED : BST_UNCHECKED, 0);
@@ -341,8 +343,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             } else if (wmId == 3) {
                 currentProfile = (currentProfile == &palaProfile) ? &rogueProfile : &palaProfile;
                 LoadBindsToUI();
-                AppendLog(std::wstring(uiStrs[13][currentLang]) + currentProfile->profileName[currentLang]);
-                InvalidateRect(hStatProfile, NULL, TRUE);
+                AppendLog(std::wstring(uiStrs[13][currentLang]) + L": " + currentProfile->profileName[currentLang]);
+                InvalidateRect(hMainWnd, NULL, TRUE);
                 ShowProfilePopup();
             } else if (wmId == 4) {
                 isRunning = false; PostQuitMessage(0);
@@ -354,6 +356,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             } else if (wmId == 7 && wmEvent == CBN_SELCHANGE) { 
                 currentLang = (Lang)SendMessage(hComboLang, CB_GETCURSEL, 0, 0);
                 UpdateUIStrings();
+                InvalidateRect(hMainWnd, NULL, TRUE);
             } else if (wmId == 8 && wmEvent == CBN_SELCHANGE) { 
                 isDarkTheme = (SendMessage(hComboTheme, CB_GETCURSEL, 0, 0) == 1);
                 ApplyTheme();
@@ -405,8 +408,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             if (!f2_pressed) { 
                 currentProfile = (currentProfile == &palaProfile) ? &rogueProfile : &palaProfile;
                 LoadBindsToUI();
-                AppendLog(std::wstring(uiStrs[13][currentLang]) + currentProfile->profileName[currentLang]);
-                InvalidateRect(hStatProfile, NULL, TRUE); f2_pressed = true; 
+                AppendLog(std::wstring(uiStrs[13][currentLang]) + L": " + currentProfile->profileName[currentLang]);
+                InvalidateRect(hMainWnd, NULL, TRUE); f2_pressed = true; 
                 ShowProfilePopup();
             }
         } else f2_pressed = false;
